@@ -37,5 +37,7 @@ jobs:
           command -v xcodegen || brew install xcodegen
 
       - name: Compile and link the iOS app with synthetic inputs
+        env:
+          DM_GAME: "010062E01FE0C000"
         shell: bash
         run: python dm/ios/tools/build_smoke.py --output "$RUNNER_TEMP/nxnative-ios-smoke"
