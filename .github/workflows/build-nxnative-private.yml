@@ -3,8 +3,8 @@ name: Build Time Stranger iOS IPA
 on:
   workflow_dispatch:
     inputs:
-      drive_file_id:
-        description: Private Google Drive file ID
+      drive_file_ids:
+        description: Private Google Drive file IDs in archive order
         required: true
       archive_sha256:
         description: SHA-256 of the prepared build archive
@@ -60,7 +60,7 @@ jobs:
       - name: Fetch authenticated build input
         shell: bash
         env:
-          DRIVE_FILE_ID: ${{ inputs.drive_file_id }}
+          DRIVE_FILE_IDS: ${{ inputs.drive_file_ids }}
           ARCHIVE_SHA256: ${{ inputs.archive_sha256 }}
           DRIVE_ACCESS_TOKEN: ${{ secrets.PORTGAME_DRIVE_ACCESS_TOKEN }}
         run: python .github/scripts/fetch_drive_build_input.py "$RUNNER_TEMP/port-game-input"
