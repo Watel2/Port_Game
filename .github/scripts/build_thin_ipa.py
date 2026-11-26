@@ -141,7 +141,7 @@ def build(args):
     try:
         ios = upstream.build_shaders(
             sys.executable, args.repo, shaders, xlate, env, logs, profile,
-            pull=profile.get("pso_mtl4") == "on",
+            pull=profile.get("pso_mtl4", "off") == "on",
         )
     except upstream.BuildError:
         log = logs / "dmsh_build.log"
