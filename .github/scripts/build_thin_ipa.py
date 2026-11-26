@@ -17,6 +17,7 @@ VERSION = "1.2.1"
 PACKAGE = "v196608"
 COMMIT = "2f959ede5f1e08f10fe214e2e61933a051bdd515"
 INPUT_SHA256 = "2cf4fa6cd8e6786302536f23b78f2581c1c69f45828c9e2390d3ed427cf5a4a4"
+CONTROL_SHA256 = "67bda88953f6785248b17f04a56d94aea2d3f3882981b667f251ff273b4d0c9d"
 
 
 def read_inputs(archive, destination):
@@ -74,6 +75,10 @@ def prepare(args):
 
     game_dir = args.work / "game"
     shutil.copytree(inputs / "exefs", game_dir / "ExeFS")
+    control = args.control.read_bytes()
+    if hashlib.sha256(control).hexdigest() != CONTROL_SHA256:
+        raise ValueError("Control metadata does not match the 1.2.1 update")
+    (game_dir / "control.nacp").write_bytes(control)
     profile = profiles.load(GAME)
     profiles_dir = args.work / "profiles"
     derived = profiles_dir / GAME
@@ -101,6 +106,8 @@ def verify_ipa(output, identity_path):
             raise ValueError("The IPA does not contain the iOS application")
         if bundle.read(app + "romfs.id").strip() != identity_path.read_bytes().strip():
             raise ValueError("The IPA contains a different RomFS identity")
+        if hashlib.sha256(bundle.read(app + "dm/control.nacp")).hexdigest() != CONTROL_SHA256:
+            raise ValueError("The IPA does not contain the expected control metadata")
         if any(name == app + "romfs.img" or name.startswith(app + "romfs/") for name in names):
             raise ValueError("The IPA unexpectedly contains the full game data")
         if not any(name.startswith(app + "msl/") and name.endswith(".metallib") for name in names):
@@ -168,7 +175,7 @@ def build(args):
 
 def main():
     parser = argparse.ArgumentParser()
-    for name in ("repo", "archive", "work", "output"):
+    for name in ("repo", "archive", "control", "work", "output"):
         parser.add_argument(name, type=lambda path: Path(path).resolve())
     parser.add_argument("--prepare-only", action="store_true")
     build(parser.parse_args())
