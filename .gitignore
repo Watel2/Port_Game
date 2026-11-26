@@ -1,0 +1,16 @@
+/Local_Assets/
+/Game/
+/Workspace/
+/Output_IPA/
+
+*.ipa
+*.nsp
+*.nsz
+*.xci
+*.xcz
+*.rar
+prod.keys
+title.keys
+.DS_Store
+xcuserdata/
+DerivedData/

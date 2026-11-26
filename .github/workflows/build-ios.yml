@@ -1,0 +1,58 @@
+name: Build Unsigned iOS IPA
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Build for iPhone and iPad
+        shell: bash
+        run: |
+          xcodebuild \
+            -project Source/PortGame.xcodeproj \
+            -scheme PortGame \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/PortGameDerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build
+
+      - name: Package the unsigned app
+        shell: bash
+        run: |
+          app="$RUNNER_TEMP/PortGameDerivedData/Build/Products/Release-iphoneos/PortGame.app"
+          output="$RUNNER_TEMP/PortGameIPA"
+          staging="$(mktemp -d "$RUNNER_TEMP/portgame.XXXXXX")"
+          mkdir -p "$staging/Payload" "$output"
+          staged_app="$staging/Payload/PortGame.app"
+          ditto "$app" "$staged_app"
+
+          binary="$staged_app/PortGame"
+          test -f "$staged_app/Info.plist"
+          test -x "$binary"
+          test ! -e "$staged_app/embedded.mobileprovision"
+          test ! -e "$staged_app/_CodeSignature"
+          if codesign -d "$binary" >/dev/null 2>&1; then
+            codesign --remove-signature "$binary"
+          fi
+
+          ipa="$output/PortGame-unsigned.ipa"
+          ditto -c -k --norsrc --keepParent "$staging/Payload" "$ipa"
+          unzip -tq "$ipa"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          path: ${{ runner.temp }}/PortGameIPA/PortGame-unsigned.ipa
+          archive: false
+          if-no-files-found: error
