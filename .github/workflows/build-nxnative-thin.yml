@@ -1,0 +1,65 @@
+name: Build Time Stranger IPA from thin inputs
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: xcode-27
+    timeout-minutes: 90
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: seedds/nxnative
+          ref: 2f959ede5f1e08f10fe214e2e61933a051bdd515
+          path: nxnative
+          persist-credentials: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14"
+          architecture: arm64
+
+      - name: Fetch the private build inputs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download time-stranger-inputs-v196608 \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern 'TimeStranger-1.2.1-build-inputs.zip' --dir "$RUNNER_TEMP"
+
+      - name: Prepare Xcode and build tools
+        shell: bash
+        run: |
+          df -h "$RUNNER_TEMP"
+          xcodebuild -version
+          xcodebuild -downloadComponent MetalToolchain
+          brew install xcodegen zstd glslang
+          python -m pip install lz4 "capstone>=5,<6" fonttools zbic
+
+      - name: Build and verify the IPA with separate data
+        shell: bash
+        run: |
+          python -u .github/scripts/build_thin_ipa.py nxnative \
+            "$RUNNER_TEMP/TimeStranger-1.2.1-build-inputs.zip" \
+            "$RUNNER_TEMP/thin-build" \
+            "$RUNNER_TEMP/PortGameIPA/TimeStranger-1.2.1-unsigned.ipa"
+
+      - name: Upload the IPA
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          path: ${{ runner.temp }}/PortGameIPA/TimeStranger-1.2.1-unsigned.ipa
+          archive: false
+          if-no-files-found: error
+          retention-days: 3
