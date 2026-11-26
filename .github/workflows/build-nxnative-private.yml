@@ -1,0 +1,102 @@
+name: Build Time Stranger iOS IPA
+
+on:
+  workflow_dispatch:
+    inputs:
+      drive_file_id:
+        description: Private Google Drive file ID
+        required: true
+      archive_sha256:
+        description: SHA-256 of the prepared build archive
+        required: true
+      romfs_index:
+        description: Index fingerprint of the local RomFS image
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: time-stranger-ios
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: xcode-27
+    timeout-minutes: 90
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+    steps:
+      - name: Check out the workflow scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check out nxnative
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: seedds/nxnative
+          ref: 2f959ede5f1e08f10fe214e2e61933a051bdd515
+          path: nxnative
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14"
+          architecture: arm64
+
+      - name: Prepare Xcode and build tools
+        shell: bash
+        run: |
+          df -h "$RUNNER_TEMP"
+          xcodebuild -version
+          xcodebuild -downloadComponent MetalToolchain
+          xcrun --sdk iphoneos metal --version
+          brew install xcodegen zstd glslang
+          python -m pip install lz4 "capstone>=5,<6" fonttools zbic
+
+      - name: Fetch authenticated build input
+        shell: bash
+        env:
+          DRIVE_FILE_ID: ${{ inputs.drive_file_id }}
+          ARCHIVE_SHA256: ${{ inputs.archive_sha256 }}
+          DRIVE_ACCESS_TOKEN: ${{ secrets.PORTGAME_DRIVE_ACCESS_TOKEN }}
+        run: python .github/scripts/fetch_drive_build_input.py "$RUNNER_TEMP/port-game-input"
+
+      - name: Build unsigned iOS IPA with separate RomFS
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/PortGameIPA"
+          python nxnative/scripts/build_ipa_from_nsp.py "$RUNNER_TEMP/port-game-input" \
+            --platform ios --title-id 010062E01FE0C000 --package v196608 \
+            --romfs separate --shader-files --work-dir "$RUNNER_TEMP/port-game-build" \
+            -o "$RUNNER_TEMP/PortGameIPA/TimeStranger-1.2.1-unsigned.ipa"
+
+      - name: Verify IPA and matching RomFS
+        shell: bash
+        env:
+          EXPECTED_ROMFS_INDEX: ${{ inputs.romfs_index }}
+          PYTHONPATH: nxnative/dm/tools
+        run: |
+          unzip -tq "$RUNNER_TEMP/PortGameIPA/TimeStranger-1.2.1-unsigned.ipa"
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          import romfs_image
+
+          image = Path(os.environ["RUNNER_TEMP"]) / "port-game-build/extract/v196608/RomFS.img"
+          observed = romfs_image.parse_identity(romfs_image.identity(image))
+          if observed["index"] != os.environ["EXPECTED_ROMFS_INDEX"]:
+              raise SystemExit("The built IPA expects a different RomFS image")
+          print("The IPA build matches the local RomFS index")
+          PY
+
+      - name: Upload the private IPA artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          path: ${{ runner.temp }}/PortGameIPA/TimeStranger-1.2.1-unsigned.ipa
+          archive: false
+          if-no-files-found: error
+          retention-days: 3
