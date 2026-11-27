@@ -35,9 +35,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release download time-stranger-inputs-v196608 \
+          gh release download time-stranger-inputs-v196608-dlc \
             --repo "$GITHUB_REPOSITORY" \
-            --pattern 'TimeStranger-1.2.1-build-inputs.zip' --pattern 'control.nacp' --dir "$RUNNER_TEMP"
+            --pattern 'TimeStranger-1.2.1-dlc-build-inputs.zip' --pattern 'control.nacp' --dir "$RUNNER_TEMP"
 
       - name: Prepare Xcode and build tools
         shell: bash
@@ -52,15 +52,15 @@ jobs:
         shell: bash
         run: |
           python -u .github/scripts/build_thin_ipa.py nxnative \
-            "$RUNNER_TEMP/TimeStranger-1.2.1-build-inputs.zip" \
+            "$RUNNER_TEMP/TimeStranger-1.2.1-dlc-build-inputs.zip" \
             "$RUNNER_TEMP/control.nacp" \
             "$RUNNER_TEMP/thin-build" \
-            "$RUNNER_TEMP/PortGameIPA/TimeStranger-1.2.1-unsigned.ipa"
+            "$RUNNER_TEMP/PortGameIPA/TimeStranger-1.2.1-icon-dlc-unsigned.ipa"
 
       - name: Upload the IPA
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          path: ${{ runner.temp }}/PortGameIPA/TimeStranger-1.2.1-unsigned.ipa
+          path: ${{ runner.temp }}/PortGameIPA/TimeStranger-1.2.1-icon-dlc-unsigned.ipa
           archive: false
           if-no-files-found: error
           retention-days: 3

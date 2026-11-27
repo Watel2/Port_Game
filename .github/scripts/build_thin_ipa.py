@@ -5,6 +5,7 @@ import importlib
 import json
 import os
 from pathlib import Path
+import plistlib
 import re
 import shutil
 import subprocess
@@ -16,8 +17,9 @@ GAME = "010062E01FE0C000"
 VERSION = "1.2.1"
 PACKAGE = "v196608"
 COMMIT = "2f959ede5f1e08f10fe214e2e61933a051bdd515"
-INPUT_SHA256 = "2cf4fa6cd8e6786302536f23b78f2581c1c69f45828c9e2390d3ed427cf5a4a4"
+INPUT_SHA256 = "af9e0ab168815a78eecb1bf518a5d4b36093046e5b3f8313d6e5f800aecac57f"
 CONTROL_SHA256 = "67bda88953f6785248b17f04a56d94aea2d3f3882981b667f251ff273b4d0c9d"
+SHADER_COUNT = 19_992
 
 
 def read_inputs(archive, destination):
@@ -25,7 +27,10 @@ def read_inputs(archive, destination):
         if hashlib.file_digest(stream, "sha256").hexdigest() != INPUT_SHA256:
             raise ValueError("Build input archive does not match the expected SHA-256")
     with ZipFile(archive) as bundle:
-        expected = {"title_id": GAME, "version": VERSION, "package": PACKAGE, "nxnative_commit": COMMIT}
+        expected = {
+            "title_id": GAME, "version": VERSION, "package": PACKAGE,
+            "nxnative_commit": COMMIT, "shader_count": SHADER_COUNT,
+        }
         if json.loads(bundle.read("build-inputs.json")) != expected:
             raise ValueError("Build input manifest does not match this workflow")
         bundle.extractall(destination)
@@ -108,10 +113,14 @@ def verify_ipa(output, identity_path):
             raise ValueError("The IPA contains a different RomFS identity")
         if hashlib.sha256(bundle.read(app + "dm/control.nacp")).hexdigest() != CONTROL_SHA256:
             raise ValueError("The IPA does not contain the expected control metadata")
+        info = plistlib.loads(bundle.read(app + "Info.plist"))
+        if app + "Assets.car" not in names or not info.get("CFBundleIcons", {}).get("CFBundlePrimaryIcon"):
+            raise ValueError("The IPA does not contain the compiled app icon")
         if any(name == app + "romfs.img" or name.startswith(app + "romfs/") for name in names):
             raise ValueError("The IPA unexpectedly contains the full game data")
-        if not any(name.startswith(app + "msl/") and name.endswith(".metallib") for name in names):
-            raise ValueError("The IPA contains no iOS shader libraries")
+        shaders = sum(name.startswith(app + "msl/") and name.endswith("_b.metallib") for name in names)
+        if shaders != SHADER_COUNT:
+            raise ValueError(f"Expected {SHADER_COUNT} base and DLC shader libraries, found {shaders}")
         bad = bundle.testzip()
         if bad:
             raise ValueError(f"Damaged IPA entry: {bad}")
@@ -165,6 +174,7 @@ def build(args):
         GAME=GAME, W=str(args.work / "pack"), PATCHED=str(patched), MSL_IOS=str(ios),
         ROMFS=str(game_dir / "RomFS.img"), AOC="", GFXAPI="nvn", DM_COPY_ROMFS="NO",
         DM_EXTERNAL_ROMFS_ID=str(identity), DM_DISPLAY_NAME="Digimon Story Time Stranger",
+        DM_ICON=str(args.work / "input/icon.jpg"),
         DM_APP_VERSION=VERSION, DM_ENV_FILE=str(config), DM_SHADER_FILES="1",
         DM_PSO_GPUS="none", DM_LANG="en-US",
     )
