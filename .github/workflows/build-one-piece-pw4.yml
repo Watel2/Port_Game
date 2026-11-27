@@ -8,6 +8,7 @@ permissions:
 
 jobs:
   build:
+    if: ${{ github.event.repository.private }}
     runs-on: xcode-27
     timeout-minutes: 180
     env:
