@@ -20,6 +20,34 @@ COMMIT = "2f959ede5f1e08f10fe214e2e61933a051bdd515"
 INPUT_SHA256 = "af9e0ab168815a78eecb1bf518a5d4b36093046e5b3f8313d6e5f800aecac57f"
 CONTROL_SHA256 = "67bda88953f6785248b17f04a56d94aea2d3f3882981b667f251ff273b4d0c9d"
 SHADER_COUNT = 19_992
+CHEAT_BUILD_ID = "8567df0b7dc16822b015d604bbcc846d"
+CHEAT_GATES = (
+    (0x5329EC, 27, "b9405800", "Set wallet on its existing reader"),
+    (0x5329AC, 28, "6b09011f", "Preserve raised wallet capacity on spending"),
+    (0x51440, 29, "0b080128", "Scale the battle EXP reward before accumulation"),
+)
+
+
+def replace_once(path, marker, replacement):
+    content = path.read_text(encoding="utf-8")
+    if content.count(marker) != 1:
+        raise ValueError(f"Unexpected source in {path}")
+    path.write_text(content.replace(marker, replacement), encoding="utf-8")
+
+
+def enable_cheat_menu(repo):
+    source = Path(__file__).resolve().parents[2] / "Source"
+    ios = repo / "dm/ios/Sources"
+    for name in ("TimeStrangerCheatMenu.h", "TimeStrangerCheatMenu.m"):
+        shutil.copyfile(source / name, ios / name)
+    replace_once(repo / "dm/host/dm.h", "OBS_MAX = 27", "OBS_MAX = 30")
+    replace_once(ios / "DmIOS-Bridging-Header.h", '#include "save_sync.h"',
+                 '#include "save_sync.h"\n#import "TimeStrangerCheatMenu.h"')
+    replace_once(ios / "GameMenu.swift", "    return items\n",
+                 '    items.append(UIAction(title: "เงินเยนและ EXP") { _ in TimeStrangerShowCheatMenu() })\n    return items\n')
+    profile = repo / "dm/games" / GAME / "patches.py"
+    with profile.open("a", encoding="utf-8") as stream:
+        stream.write(f"\nOBS = globals().get('OBS', {{}})\nOBS.setdefault({CHEAT_BUILD_ID!r}, []).extend({CHEAT_GATES!r})\n")
 
 
 def read_inputs(archive, destination):
@@ -129,6 +157,8 @@ def verify_ipa(output, identity_path):
 
 def build(args):
     upstream, profile, game_dir, shaders, env = prepare(args)
+    if args.cheat_menu:
+        enable_cheat_menu(args.repo)
     if args.prepare_only:
         return
     patched = args.work / "patched"
@@ -154,6 +184,11 @@ def build(args):
 
     with ThreadPoolExecutor(max_workers=3) as workers:
         list(workers.map(rewrite, profile.modules_in(game_dir / "ExeFS")))
+    if args.cheat_menu:
+        obs = (patched / "main.obs.tsv").read_text(encoding="utf-8").splitlines()
+        for address, gate, instruction, _ in CHEAT_GATES:
+            if not any(line.startswith(f"{address:#x}\t{gate}\t{instruction}\t") for line in obs):
+                raise ValueError(f"Missing cheat menu gate at {address:#x}")
     try:
         ios = upstream.build_shaders(
             sys.executable, args.repo, shaders, xlate, env, logs, profile,
@@ -188,6 +223,7 @@ def main():
     for name in ("repo", "archive", "control", "work", "output"):
         parser.add_argument(name, type=lambda path: Path(path).resolve())
     parser.add_argument("--prepare-only", action="store_true")
+    parser.add_argument("--cheat-menu", action="store_true")
     build(parser.parse_args())
 
 
