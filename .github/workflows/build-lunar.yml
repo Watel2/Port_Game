@@ -1,0 +1,75 @@
+name: Build Lunar Remastered Collection iOS IPA
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    if: ${{ github.ref_name == github.event.repository.default_branch }}
+    runs-on: xcode-27
+    timeout-minutes: 150
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      BUILD_STORAGE: Watel2/Port_Game-build-private
+      J: "3"
+      DMSH_PROCS: "3"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: seedds/nxnative
+          ref: 2f959ede5f1e08f10fe214e2e61933a051bdd515
+          path: nxnative
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: "3.14"
+          architecture: arm64
+      - name: Fetch extracted game from the private release
+        env:
+          GH_TOKEN: ${{ secrets.PORTGAME_PRIVATE_BUILD_TOKEN }}
+        run: |
+          test "$(gh repo view "$BUILD_STORAGE" --json visibility --jq '.visibility')" = PRIVATE
+          mkdir -p "$RUNNER_TEMP/lunar-download" "$RUNNER_TEMP/lunar-inputs"
+          cd "$RUNNER_TEMP/lunar-download"
+          gh release download lunar-1.0.3-build-inputs --repo "$BUILD_STORAGE" --pattern 'lunar-input.part.*' --pattern 'SHA256SUMS.txt'
+          shasum -a 256 -c SHA256SUMS.txt
+          cat lunar-input.part.* | tar -xf - -C "$RUNNER_TEMP/lunar-inputs"
+          rm -f lunar-input.part.*
+      - name: Prepare Xcode
+        run: |
+          df -h "$RUNNER_TEMP"
+          xcodebuild -version
+          xcodebuild -downloadComponent MetalToolchain
+          brew install xcodegen zstd glslang
+          python -m pip install lz4 'capstone>=5,<6' fonttools zbic
+      - name: Build the combined IPA
+        run: |
+          mkdir -p "$RUNNER_TEMP/lunar-output"
+          python -u .github/scripts/build-lunar.py nxnative "$RUNNER_TEMP/lunar-inputs"             --platform ios --work-dir "$RUNNER_TEMP/lunar-build"             -o "$RUNNER_TEMP/lunar-output/Lunar-1.0.3-unsigned.ipa"
+      - name: Verify all programs and publish privately
+        env:
+          GH_TOKEN: ${{ secrets.PORTGAME_PRIVATE_BUILD_TOKEN }}
+        run: |
+          cd "$RUNNER_TEMP/lunar-output"
+          ipa=Lunar-1.0.3-unsigned.ipa
+          python - "$ipa" <<'PY'
+          import plistlib, sys, zipfile
+          with zipfile.ZipFile(sys.argv[1]) as z:
+              app = 'Payload/DmIOS.app/'
+              info = plistlib.loads(z.read(app + 'Info.plist'))
+              assert info['CFBundleShortVersionString'] == '1.0.3'
+              assert info['CFBundleIdentifier'] == 'org.nxnative.0100dcd01e9ee000'
+              for prefix in ('', 'p1/', 'p2/'):
+                  assert z.getinfo(app + prefix + 'romfs.img').file_size > 0
+              assert not z.testzip()
+          PY
+          test "$(gh repo view "$BUILD_STORAGE" --json visibility --jq '.visibility')" = PRIVATE
+          shasum -a 256 "$ipa" > SHA256SUMS.txt
+          split -b 1500000000 -a 2 "$ipa" "$ipa.part."
+          tag="lunar-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          gh release create "$tag" "$ipa".part.* SHA256SUMS.txt --repo "$BUILD_STORAGE" --draft             --title "Lunar Remastered Collection 1.0.3 unsigned"             --notes "Join parts in filename order and verify against SHA256SUMS.txt."
+          gh release edit "$tag" --repo "$BUILD_STORAGE" --draft=false
