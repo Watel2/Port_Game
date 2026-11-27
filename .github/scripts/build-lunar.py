@@ -37,7 +37,7 @@ if os.environ.get('LUNAR_SEPARATE_DATA') == 'true':
             return external;
         }
         if (![fm fileExistsAtPath:[NSBundle.mainBundle.resourcePath stringByAppendingPathComponent:prog]]) {
-            snprintf(g_boot_message, sizeof g_boot_message, "Copy Data/%s into this app's Documents folder.", name.UTF8String);
+            fprintf(stderr, "boot: copy Data/%s into this app's Documents folder.\\n", name.UTF8String);
         }""",
     )
     replace_once(
