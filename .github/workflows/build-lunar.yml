@@ -63,7 +63,7 @@ jobs:
               info = plistlib.loads(z.read(app + 'Info.plist'))
               assert info['CFBundleShortVersionString'] == '1.0.3'
               assert info['CFBundleIdentifier'] == 'org.nxnative.0100dcd01e9ee000'
-              for prefix in ('', 'p1/', 'p2/'):
+              for prefix in ('p0/', 'p1/', 'p2/'):
                   assert z.getinfo(app + prefix + 'romfs.img').file_size > 0
               assert not z.testzip()
           PY
