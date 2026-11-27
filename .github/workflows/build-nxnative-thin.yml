@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   build:
@@ -58,9 +59,17 @@ jobs:
         shell: bash
         env:
           BUILD_CHEAT_MENU: ${{ inputs.cheat_menu }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           flags=()
-          if [[ "$BUILD_CHEAT_MENU" == "true" ]]; then flags+=(--cheat-menu); fi
+          if [[ "$BUILD_CHEAT_MENU" == "true" ]]; then
+            flags+=(--cheat-menu)
+            cached_ipa="$RUNNER_TEMP/shader-source.ipa"
+            if gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/15167600216/zip" > "$cached_ipa" &&
+               echo "6e596f6a88edfddc2ffb9b6063670c2a734c30834197e402ef90e3488732953e  $cached_ipa" | shasum -a 256 -c -; then
+              flags+=(--shader-ipa "$cached_ipa")
+            fi
+          fi
           python -u .github/scripts/build_thin_ipa.py nxnative \
             "$RUNNER_TEMP/TimeStranger-1.2.1-dlc-build-inputs.zip" \
             "$RUNNER_TEMP/control.nacp" \

@@ -20,6 +20,7 @@ COMMIT = "2f959ede5f1e08f10fe214e2e61933a051bdd515"
 INPUT_SHA256 = "af9e0ab168815a78eecb1bf518a5d4b36093046e5b3f8313d6e5f800aecac57f"
 CONTROL_SHA256 = "67bda88953f6785248b17f04a56d94aea2d3f3882981b667f251ff273b4d0c9d"
 SHADER_COUNT = 19_992
+SHADER_IPA_SHA256 = "6e596f6a88edfddc2ffb9b6063670c2a734c30834197e402ef90e3488732953e"
 CHEAT_BUILD_ID = "8567df0b7dc16822b015d604bbcc846d"
 CHEAT_GATES = (
     (0x5329EC, 27, "b9405800", "Set wallet on its existing reader"),
@@ -155,6 +156,25 @@ def verify_ipa(output, identity_path):
     print("IPA verified: iOS executable, Metal libraries, and matching separate RomFS", flush=True)
 
 
+def reuse_ios_shaders(ipa, destination, profile_dir):
+    with ipa.open("rb") as stream:
+        if hashlib.file_digest(stream, "sha256").hexdigest() != SHADER_IPA_SHA256:
+            raise ValueError("Previous IPA hash does not match the shader build")
+    prefix = "Payload/DmIOS.app/"
+    with ZipFile(ipa) as bundle:
+        for member in bundle.infolist():
+            if not member.filename.startswith(prefix + "msl/") or member.is_dir():
+                continue
+            output = destination / member.filename.removeprefix(prefix + "msl/")
+            output.parent.mkdir(parents=True, exist_ok=True)
+            with bundle.open(member) as src, output.open("wb") as target:
+                shutil.copyfileobj(src, target)
+        for filename in ("c1_full.tsv", "cb_extent.tsv"):
+            (profile_dir / filename).write_bytes(bundle.read(prefix + "dm/" + filename))
+    print("Reused the verified 1.2.1 Metal libraries", flush=True)
+    return destination
+
+
 def build(args):
     upstream, profile, game_dir, shaders, env = prepare(args)
     if args.cheat_menu:
@@ -190,7 +210,7 @@ def build(args):
             if not any(line.startswith(f"{address:#x}\t{gate}\t{instruction}\t") for line in obs):
                 raise ValueError(f"Missing cheat menu gate at {address:#x}")
     try:
-        ios = upstream.build_shaders(
+        ios = reuse_ios_shaders(args.shader_ipa, shaders / "ios", profile.dir) if args.shader_ipa else upstream.build_shaders(
             sys.executable, args.repo, shaders, xlate, env, logs, profile,
             pull=profile.get("pso_mtl4", "off") == "on",
         )
@@ -224,6 +244,7 @@ def main():
         parser.add_argument(name, type=lambda path: Path(path).resolve())
     parser.add_argument("--prepare-only", action="store_true")
     parser.add_argument("--cheat-menu", action="store_true")
+    parser.add_argument("--shader-ipa", type=lambda path: Path(path).resolve())
     build(parser.parse_args())
 
 

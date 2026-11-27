@@ -21,7 +21,8 @@ static void applyWallet(uint64_t *regs, int param) {
 
 static void preserveWallet(uint64_t *regs, int param) {
     // Preserve balances explicitly raised above the regular ceiling when spending.
-    if ((int32_t)(uint32_t)regs[8] > 9999999) regs[9] = WalletMax;
+    if (regs[0] && *(const uint32_t *)(uintptr_t)(regs[0] + 0x58) > 9999999)
+        regs[9] = WalletMax;
 }
 
 static void applyExperience(uint64_t *regs, int param) {
