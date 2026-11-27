@@ -57,7 +57,20 @@ jobs:
 
       - name: Build and verify the IPA with separate data
         shell: bash
+        env:
+          J: "3"
+          DMSH_PROCS: "3"
         run: |
+          progress="$RUNNER_TEMP/thin-build/shader/progress.json"
+          (
+            while sleep 60; do
+              if [[ -s "$progress" ]]; then
+                jq -r '"Metal: " + .step + (if has("done") and has("total") then " \(.done)/\(.total)" else "" end)' "$progress"
+              fi
+            done
+          ) &
+          monitor=$!
+          trap 'kill "$monitor" 2>/dev/null || true' EXIT
           python -u .github/scripts/build_thin_ipa.py nxnative \
             "$RUNNER_TEMP/OnePiecePW4-1.8.7-build-inputs.zip" \
             "$RUNNER_TEMP/control.nacp" \
