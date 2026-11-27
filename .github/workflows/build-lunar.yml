@@ -1,6 +1,11 @@
 name: Build Lunar Remastered Collection iOS IPA
 on:
   workflow_dispatch:
+    inputs:
+      separate_data:
+        description: Keep the three program images outside the IPA
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -12,6 +17,7 @@ jobs:
       DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
       HOMEBREW_NO_AUTO_UPDATE: "1"
       BUILD_STORAGE: Watel2/Port_Game-build-private
+      LUNAR_SEPARATE_DATA: ${{ inputs.separate_data }}
       J: "3"
       DMSH_PROCS: "3"
     steps:
@@ -49,22 +55,34 @@ jobs:
       - name: Build the combined IPA
         run: |
           mkdir -p "$RUNNER_TEMP/lunar-output"
-          python -u .github/scripts/build-lunar.py nxnative "$RUNNER_TEMP/lunar-inputs"             --platform ios --work-dir "$RUNNER_TEMP/lunar-build"             -o "$RUNNER_TEMP/lunar-output/Lunar-1.0.3-unsigned.ipa"
+          ipa=Lunar-1.0.3-unsigned.ipa
+          bundle=org.nxnative.0100dcd01e9ee000
+          if [[ "$LUNAR_SEPARATE_DATA" == true ]]; then
+            ipa=Lunar-1.0.3-separate-data-unsigned.ipa
+            bundle="$bundle.separatedata"
+          fi
+          echo "LUNAR_IPA=$ipa" >> "$GITHUB_ENV"
+          echo "LUNAR_BUNDLE=$bundle" >> "$GITHUB_ENV"
+          python -u .github/scripts/build-lunar.py nxnative "$RUNNER_TEMP/lunar-inputs"             --platform ios --work-dir "$RUNNER_TEMP/lunar-build"             --bundle-id "$bundle" -o "$RUNNER_TEMP/lunar-output/$ipa"
       - name: Verify all programs and publish privately
         env:
           GH_TOKEN: ${{ secrets.PORTGAME_PRIVATE_BUILD_TOKEN }}
         run: |
           cd "$RUNNER_TEMP/lunar-output"
-          ipa=Lunar-1.0.3-unsigned.ipa
+          ipa="$LUNAR_IPA"
           python - "$ipa" <<'PY'
-          import plistlib, sys, zipfile
+          import os, plistlib, sys, zipfile
           with zipfile.ZipFile(sys.argv[1]) as z:
               app = 'Payload/DmIOS.app/'
               info = plistlib.loads(z.read(app + 'Info.plist'))
               assert info['CFBundleShortVersionString'] == '1.0.3'
-              assert info['CFBundleIdentifier'] == 'org.nxnative.0100dcd01e9ee000'
+              assert info['CFBundleIdentifier'] == os.environ['LUNAR_BUNDLE']
+              names = set(z.namelist())
+              split_data = os.environ['LUNAR_SEPARATE_DATA'] == 'true'
               for prefix in ('p0/', 'p1/', 'p2/'):
-                  assert z.getinfo(app + prefix + 'romfs.img').file_size > 0
+                  assert (app + prefix + 'romfs.img' in names) == (not split_data)
+              assert app + 'dm/programs.txt' in names
+              assert app + 'Assets.car' in names
               assert not z.testzip()
           PY
           test "$(gh repo view "$BUILD_STORAGE" --json visibility --jq '.visibility')" = PRIVATE

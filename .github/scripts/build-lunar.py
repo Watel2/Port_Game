@@ -1,4 +1,5 @@
 """Build a single Lunar IPA from three locally extracted update folders."""
+import os
 import sys
 from pathlib import Path
 
@@ -17,6 +18,33 @@ for old, new in edits:
     if source.count(old) != 1:
         raise SystemExit('Unexpected upstream build script version')
     source = source.replace(old, new, 1)
+if os.environ.get('LUNAR_SEPARATE_DATA') == 'true':
+    def replace_once(path, old, new):
+        text = path.read_text(encoding='utf-8')
+        if text.count(old) != 1:
+            raise SystemExit(f'Unexpected upstream layout in {path}')
+        path.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+    replace_once(
+        root / 'dm/ios/Sources/main.m',
+        "    if (prog) {   // the program's files are in the app (Documents holds one image, one program's)",
+        """    if (prog) {
+        NSString *data = [doc stringByAppendingPathComponent:@"Data"];
+        NSString *name = [[prog substringFromIndex:1] stringByAppendingPathExtension:@"img"];
+        NSString *external = [data stringByAppendingPathComponent:name];
+        if (romfs_image_complete(external)) {
+            setenv("DM_ROMFS_PROGRAMS", data.fileSystemRepresentation, 0);
+            return external;
+        }
+        if (![fm fileExistsAtPath:[NSBundle.mainBundle.resourcePath stringByAppendingPathComponent:prog]]) {
+            snprintf(g_boot_message, sizeof g_boot_message, "Copy Data/%s into this app's Documents folder.", name.UTF8String);
+        }""",
+    )
+    replace_once(
+        root / 'dm/ios/tools/build_ipa.sh',
+        '    if [ -f "$ROMFS" ]; then MAPS+=("$P/p$PN/romfs.img=$ROMFS"); else MAPS+=("$P/p$PN/romfs=$ROMFS"); fi',
+        '    # Lunar uses Documents/Data/<program index>.img for each program.',
+    )
 sys.path.insert(0, str(script.parent))
 sys.argv = [str(script), str(inputs), '--package', 'v196608', '--romfs', 'bundle', *sys.argv[3:]]
 exec(compile(source, str(script), 'exec'), {'__file__': str(script), '__name__': '__main__', 'LUNAR_TITLE': TITLE})
