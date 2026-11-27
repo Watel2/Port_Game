@@ -113,12 +113,15 @@ def prepare(args):
     if hashlib.sha256(control).hexdigest() != CONTROL_SHA256:
         raise ValueError("Control metadata does not match the 1.2.1 update")
     (game_dir / "control.nacp").write_bytes(control)
-    profile = profiles.load(GAME)
     profiles_dir = args.work / "profiles"
     derived = profiles_dir / GAME
-    upstream.derive_profile(profile, derived, PACKAGE, game_dir, profile.words("modules"), nup_label=VERSION)
-    for table in (inputs / "tables").glob("*.tsv"):
-        shutil.copyfile(table, derived / table.name)
+    if args.one_piece:
+        shutil.copytree(inputs / "profile", derived)
+    else:
+        profile = profiles.load(GAME)
+        upstream.derive_profile(profile, derived, PACKAGE, game_dir, profile.words("modules"), nup_label=VERSION)
+        for table in (inputs / "tables").glob("*.tsv"):
+            shutil.copyfile(table, derived / table.name)
 
     os.environ.update(DM_GAME=GAME, DM_GAMES_DIR=str(profiles_dir), DM_GAMES_FIRST="1")
     env = upstream.tool_env()
@@ -224,11 +227,12 @@ def build(args):
     enable_external_romfs_identity(pack)
     identity = args.work / "input/romfs.id"
     config = args.work / "env.txt"
-    config.write_text("DM_PREEMPT=1\n", encoding="ascii")
+    config.write_text("" if args.one_piece else "DM_PREEMPT=1\n", encoding="ascii")
     env.update(
         GAME=GAME, W=str(args.work / "pack"), PATCHED=str(patched), MSL_IOS=str(ios),
         ROMFS=str(game_dir / "RomFS.img"), AOC="", GFXAPI="nvn", DM_COPY_ROMFS="NO",
-        DM_EXTERNAL_ROMFS_ID=str(identity), DM_DISPLAY_NAME="Digimon Story Time Stranger",
+        DM_EXTERNAL_ROMFS_ID=str(identity),
+        DM_DISPLAY_NAME="ONE PIECE: PIRATE WARRIORS 4" if args.one_piece else "Digimon Story Time Stranger",
         DM_ICON=str(args.work / "input/icon.jpg"),
         DM_APP_VERSION=VERSION, DM_ENV_FILE=str(config), DM_SHADER_FILES="1",
         DM_PSO_GPUS="none", DM_LANG="en-US",
@@ -239,13 +243,23 @@ def build(args):
 
 
 def main():
+    global GAME, VERSION, PACKAGE, INPUT_SHA256, CONTROL_SHA256, SHADER_COUNT
     parser = argparse.ArgumentParser()
     for name in ("repo", "archive", "control", "work", "output"):
         parser.add_argument(name, type=lambda path: Path(path).resolve())
     parser.add_argument("--prepare-only", action="store_true")
     parser.add_argument("--cheat-menu", action="store_true")
     parser.add_argument("--shader-ipa", type=lambda path: Path(path).resolve())
-    build(parser.parse_args())
+    parser.add_argument("--one-piece", action="store_true")
+    args = parser.parse_args()
+    if args.one_piece:
+        if args.cheat_menu or args.shader_ipa:
+            parser.error("The Time Stranger menu and shader archive are title-specific")
+        GAME, VERSION, PACKAGE = "01008FE00E2F6000", "1.8.7", "v1179648"
+        INPUT_SHA256 = "752c2f6721c25b5fa21a55c9519cd9cc30b9c91f63c99b56a32f5d60e08b6dcb"
+        CONTROL_SHA256 = "fdcaf8ec74570cd5bf9a070322038659f7abb4ba1bbc698d08994b0a8288cbe8"
+        SHADER_COUNT = 23_250
+    build(args)
 
 
 if __name__ == "__main__":
