@@ -49,13 +49,14 @@ if os.environ.get('LUNAR_INTERIOR_TRIAL') == 'true':
     replace_once(
         root / 'dm/gfx/nvn/nvn_mtl.m',
         '    // Similar diagnostic DM_NVN_SKIP_SMALL=',
-        """    // Lunar 1.0.3 A/B probe: the full-color six-vertex draw recorded
-    // over black Burg interiors carries invalid blend equations and factors.
-    if (dw && dw->count == 6 && (S.color.blend_en & 1) &&
+        """    // Lunar 1.0.3 can record a scene draw with both blend equations
+    // unset and an out-of-range source-alpha factor (62, 63 or 64).
+    if (dw && !dw->ind && (S.color.blend_en & 1) &&
         S.chmask.mask == 0xffffffffu && S.blend[0].eq_rgb == 0 &&
         S.blend[0].eq_a == 0 && S.blend[0].src_rgb == NVN_BLEND_FUNC_ONE_MINUS_DST_ALPHA &&
-        S.blend[0].dst_rgb == NVN_BLEND_FUNC_ZERO && S.blend[0].src_a == 62 &&
-        S.blend[0].dst_a == 115 && pr->sh[1] &&
+        S.blend[0].dst_rgb == NVN_BLEND_FUNC_ZERO && S.blend[0].src_a >= 62 &&
+        S.blend[0].src_a <= 64 && S.blend[0].dst_a == 115 && pr->sh[0] && pr->sh[1] &&
+        !strcmp(pr->sh[0]->key, "ce0f7db020ac83e0_b") &&
         !strcmp(pr->sh[1]->key, "2cc22878585a151e_b") &&
         !strcmp(DM_GAME_ID, "0100DCD01E9EE001")) {
         static int lunar_logged;
