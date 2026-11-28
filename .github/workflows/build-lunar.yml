@@ -7,7 +7,7 @@ on:
         type: boolean
         default: false
       interior_trial:
-        description: Test the coplanar Remastered map depth workaround
+        description: Enable the Lunar Remastered interior rendering workaround
         type: boolean
         default: false
 permissions:
@@ -67,11 +67,19 @@ jobs:
             bundle="$bundle.separatedata"
           fi
           if [[ "$LUNAR_INTERIOR_TRIAL" == true ]]; then
-            ipa="${ipa%-unsigned.ipa}-interior-depth-trial-unsigned.ipa"
+            ipa="${ipa%-unsigned.ipa}-interior-workaround-unsigned.ipa"
           fi
           echo "LUNAR_IPA=$ipa" >> "$GITHUB_ENV"
           echo "LUNAR_BUNDLE=$bundle" >> "$GITHUB_ENV"
-          python -u .github/scripts/build-lunar.py nxnative "$RUNNER_TEMP/lunar-inputs"             --platform ios --work-dir "$RUNNER_TEMP/lunar-build"             --bundle-id "$bundle" -o "$RUNNER_TEMP/lunar-output/$ipa"
+          extra=()
+          if [[ "$LUNAR_INTERIOR_TRIAL" == true ]]; then
+            env_file="$RUNNER_TEMP/lunar-interior.env"
+            printf '%s\n' 'DM_NVN_DEPTHOVR=2cc22878585a151e_b' > "$env_file"
+            extra+=(--env-file "$env_file")
+          fi
+          python -u .github/scripts/build-lunar.py nxnative "$RUNNER_TEMP/lunar-inputs" \
+            --platform ios --work-dir "$RUNNER_TEMP/lunar-build" \
+            --bundle-id "$bundle" -o "$RUNNER_TEMP/lunar-output/$ipa" "${extra[@]}"
       - name: Verify all programs and publish privately
         env:
           GH_TOKEN: ${{ secrets.PORTGAME_PRIVATE_BUILD_TOKEN }}
@@ -91,6 +99,9 @@ jobs:
                   assert (app + prefix + 'romfs.img' in names) == (not split_data)
               assert app + 'dm/programs.txt' in names
               assert app + 'Assets.car' in names
+              if os.environ['LUNAR_INTERIOR_TRIAL'] == 'true':
+                  assert b'DM_NVN_DEPTHOVR=2cc22878585a151e_b' in z.read(app + 'dm/env.txt').splitlines()
+                  assert b'Lunar interior trial: skipped invalid full-color blend draw' in z.read(app + info['CFBundleExecutable'])
               assert not z.testzip()
           PY
           test "$(gh repo view "$BUILD_STORAGE" --json visibility --jq '.visibility')" = PRIVATE
