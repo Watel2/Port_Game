@@ -11,6 +11,7 @@
 *.rar
 prod.keys
 title.keys
+/ProdKeys.-v22.5.0/
 .DS_Store
 xcuserdata/
 DerivedData/

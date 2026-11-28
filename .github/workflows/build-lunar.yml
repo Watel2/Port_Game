@@ -10,6 +10,10 @@ on:
         description: Enable the Lunar Remastered interior rendering workaround
         type: boolean
         default: false
+      thai_main:
+        description: Build the Thai-compatible Lunar 1 main with a distinct bundle ID
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -23,6 +27,7 @@ jobs:
       BUILD_STORAGE: Watel2/Port_Game-build-private
       LUNAR_SEPARATE_DATA: ${{ inputs.separate_data }}
       LUNAR_INTERIOR_TRIAL: ${{ inputs.interior_trial }}
+      LUNAR_THAI_MAIN: ${{ inputs.thai_main }}
       J: "3"
       DMSH_PROCS: "3"
     steps:
@@ -50,6 +55,12 @@ jobs:
           shasum -a 256 -c SHA256SUMS.txt
           cat lunar-input.part.* | tar -xf - -C "$RUNNER_TEMP/lunar-inputs"
           rm -f lunar-input.part.*
+          if [[ "$LUNAR_THAI_MAIN" == true ]]; then
+            mkdir -p "$RUNNER_TEMP/lunar-patch"
+            gh release download lunar-thai-main-v1 --repo "$BUILD_STORAGE" --pattern 'lunar1-main' --dir "$RUNNER_TEMP/lunar-patch"
+            echo '82056de95b1f990b6e244d5af30e887004e233cdab0a5ededb22812ec3cf6a6e  '"$RUNNER_TEMP/lunar-patch/lunar1-main" | shasum -a 256 -c -
+            install -m 644 "$RUNNER_TEMP/lunar-patch/lunar1-main" "$RUNNER_TEMP/lunar-inputs/0100DCD01E9EE001/updates/196608/ExeFS/main"
+          fi
       - name: Prepare Xcode
         run: |
           df -h "$RUNNER_TEMP"
@@ -68,6 +79,10 @@ jobs:
           fi
           if [[ "$LUNAR_INTERIOR_TRIAL" == true ]]; then
             ipa="${ipa%-unsigned.ipa}-interior-workaround-unsigned.ipa"
+          fi
+          if [[ "$LUNAR_THAI_MAIN" == true ]]; then
+            ipa="${ipa%-unsigned.ipa}-thai-main-unsigned.ipa"
+            bundle="$bundle.thaimain"
           fi
           echo "LUNAR_IPA=$ipa" >> "$GITHUB_ENV"
           echo "LUNAR_BUNDLE=$bundle" >> "$GITHUB_ENV"
