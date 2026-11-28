@@ -7,7 +7,7 @@ on:
         type: boolean
         default: false
       interior_trial:
-        description: Test the isolated invalid blend draw in Lunar 1 interiors
+        description: Test the coplanar Remastered map depth workaround
         type: boolean
         default: false
 permissions:
@@ -67,7 +67,7 @@ jobs:
             bundle="$bundle.separatedata"
           fi
           if [[ "$LUNAR_INTERIOR_TRIAL" == true ]]; then
-            ipa="${ipa%-unsigned.ipa}-interior-trial-unsigned.ipa"
+            ipa="${ipa%-unsigned.ipa}-interior-depth-trial-unsigned.ipa"
           fi
           echo "LUNAR_IPA=$ipa" >> "$GITHUB_ENV"
           echo "LUNAR_BUNDLE=$bundle" >> "$GITHUB_ENV"

@@ -48,21 +48,51 @@ if os.environ.get('LUNAR_SEPARATE_DATA') == 'true':
 if os.environ.get('LUNAR_INTERIOR_TRIAL') == 'true':
     replace_once(
         root / 'dm/gfx/nvn/nvn_mtl.m',
-        '    // Similar diagnostic DM_NVN_SKIP_SMALL=',
-        """    // Lunar 1.0.3 A/B probe: the full-color six-vertex draw recorded
-    // over black Burg interiors carries invalid blend equations and factors.
-    if (dw && dw->count == 6 && (S.color.blend_en & 1) &&
-        S.chmask.mask == 0xffffffffu && S.blend[0].eq_rgb == 0 &&
-        S.blend[0].eq_a == 0 && S.blend[0].src_rgb == NVN_BLEND_FUNC_ONE_MINUS_DST_ALPHA &&
-        S.blend[0].dst_rgb == NVN_BLEND_FUNC_ZERO && S.blend[0].src_a == 62 &&
-        S.blend[0].dst_a == 115 && pr->sh[1] &&
-        !strcmp(pr->sh[1]->key, "2cc22878585a151e_b") &&
-        !strcmp(DM_GAME_ID, "0100DCD01E9EE001")) {
-        static int lunar_logged;
-        if (!lunar_logged++) MLOG("Lunar interior trial: skipped invalid full-color blend draw");
-        return;
+        '    else if (g_dss_dirty || cur_ds_pass != g_pass.serial) { cur_ds = dss_get',
+        """    // Lunar's Remastered map draws the captured 2D tiles and sprites on a
+    // single plane. Replay those color draws in order if Metal's depth test
+    // rejects the plane. Keep the recorded depth state for other geometry.
+    else if (g_pass.hd && g_pass.tw == 2048 && g_pass.th == 1080 &&
+             S.ds.dt && S.ds.dw && S.ds.df == NVN_DEPTH_FUNC_LEQUAL &&
+             (S.chmask.mask & 0xfu) && dw && !dw->ind && dw->count > 0 &&
+             dw->first >= 0 && pr->sh[0] && pr->sh[1] &&
+             !strcmp(DM_GAME_ID, "0100DCD01E9EE001") &&
+             !strcmp(pr->sh[0]->key, "ce0f7db020ac83e0_b") &&
+             !strcmp(pr->sh[1]->key, "2cc22878585a151e_b")) {
+        const char *enabled = getenv("DM_LUNAR_SCENE_DEPTH");
+        int flat = (!enabled || strcmp(enabled, "0")) &&
+            S.nattr >= 1 && S.attr[0].fmt == NVN_FORMAT_RGBA32F &&
+            S.attr[0].stream == 0 && S.attr[0].offset == 0 &&
+            S.stream[0].stride == 40 && S.stream[0].divisor == 0;
+        if (flat) {
+            uint64_t start = (uint64_t)dw->first * 40, count = (uint64_t)dw->count * 40;
+            uint64_t addr = S.vbuf[0].address + start, offset;
+            void *buffer;
+            flat = S.vbuf[0].address && addr >= S.vbuf[0].address &&
+                start <= S.vbuf[0].size && count <= S.vbuf[0].size - start &&
+                !pend_hits(addr, count) && mtl_addr(addr, count, &buffer, &offset);
+            const uint8_t *bytes = flat ? [(__bridge id<MTLBuffer>)buffer contents] : NULL;
+            flat = bytes != NULL;
+            for (uint64_t i = 0; flat && i < count; i += 40) {
+                float z;
+                memcpy(&z, bytes + offset + i + 8, sizeof z);
+                flat = z == 1000.0f;
+            }
+        }
+        if (flat) {
+            static int logged;
+            if (!logged) { MLOG("Lunar scene depth trial: replaying coplanar tiles and sprites in draw order"); logged = 1; }
+            S.ds.df = NVN_DEPTH_FUNC_ALWAYS;
+            cur_ds = dss_get(g_pass.hd, g_pass.hs);
+            S.ds.df = NVN_DEPTH_FUNC_LEQUAL;
+            g_dss_dirty = 1;
+        } else if (g_dss_dirty || cur_ds_pass != g_pass.serial) {
+            cur_ds = dss_get(g_pass.hd, g_pass.hs);
+            g_dss_dirty = 0;
+        }
+        cur_ds_pass = g_pass.serial;
     }
-    // Similar diagnostic DM_NVN_SKIP_SMALL=""",
+    else if (g_dss_dirty || cur_ds_pass != g_pass.serial) { cur_ds = dss_get""",
     )
 sys.path.insert(0, str(script.parent))
 sys.argv = [str(script), str(inputs), '--package', 'v196608', '--romfs', 'bundle', *sys.argv[3:]]
